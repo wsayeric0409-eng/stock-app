@@ -69,8 +69,15 @@ def fetch(symbol, period="3mo"):
         return None
 
 def last_price(df):
-    row = df.dropna(subset=["MA5","MA10","MA20"]).iloc[-1]
-    return float(row["Close"]), float(row["MA5"]), float(row["MA10"]), float(row["MA20"]), float(row["Volume"]), float(row["VOL_MA5"])
+    cols = [c for c in ["MA5","MA10","MA20"] if c in df.columns]
+    row = df.dropna(subset=cols).iloc[-1]
+    close = float(row["Close"].iloc[0] if hasattr(row["Close"], "iloc") else row["Close"])
+    ma5   = float(row["MA5"].iloc[0]   if hasattr(row["MA5"],   "iloc") else row["MA5"])
+    ma10  = float(row["MA10"].iloc[0]  if hasattr(row["MA10"],  "iloc") else row["MA10"])
+    ma20  = float(row["MA20"].iloc[0]  if hasattr(row["MA20"],  "iloc") else row["MA20"])
+    vol   = float(row["Volume"].iloc[0]    if hasattr(row["Volume"],    "iloc") else row["Volume"])
+    vol5  = float(row["VOL_MA5"].iloc[0]   if hasattr(row["VOL_MA5"],   "iloc") else row["VOL_MA5"])
+    return close, ma5, ma10, ma20, vol, vol5
 
 def signal(close, ma5, ma10, ma20, vol, vol_ma5):
     a5, a10, a20 = close>ma5, close>ma10, close>ma20
@@ -96,7 +103,7 @@ with tab1:
         if info["股數"] == 0:
             continue
         df = fetch(sym)
-        if df is None or len(df.dropna(subset=["MA5"])) < 5:
+        if df is None or "MA5" not in df.columns or len(df.dropna(subset=["MA5"])) < 5:
             continue
         close, ma5, ma10, ma20, vol, vol_ma5 = last_price(df)
         cost = info["成本"]
@@ -162,10 +169,10 @@ with tab2:
     rows2 = []
     for sym, name in symbols:
         df = fetch(sym)
-        if df is None or len(df.dropna(subset=["MA5"])) < 5:
+        if df is None or "MA5" not in df.columns or len(df.dropna(subset=["MA5"])) < 5:
             continue
         close, ma5, ma10, ma20, vol, vol_ma5 = last_price(df)
-        prev = float(df.dropna(subset=["MA5"]).iloc[-2]["Close"])
+        prev_row = df.dropna(subset=["MA5"]).iloc[-2]["Close"]; prev = float(prev_row.iloc[0] if hasattr(prev_row, 'iloc') else prev_row)
         chg = (close - prev) / prev * 100
         sig, reason = signal(close, ma5, ma10, ma20, vol, vol_ma5)
         rows2.append({
