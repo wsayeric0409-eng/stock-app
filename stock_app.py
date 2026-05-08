@@ -4,126 +4,121 @@ import streamlit as st
 
 st.set_page_config(page_title="我的股票戰情室", layout="wide", page_icon="📊")
 
-# ── 我的持股（含成本均價）──────────────────────────
 MY_HOLDINGS = {
     "2383.TW": {"名稱": "台光電",   "成本": 2445.97, "股數": 120},
     "6515.TW": {"名稱": "穎崴",     "成本": 6104.97, "股數": 75},
     "6274.TW": {"名稱": "台燿",     "成本": 1311.87, "股數": 200},
     "2408.TW": {"名稱": "南亞科",   "成本": 287.41,  "股數": 1000},
-    "2303.TW": {"名稱": "聯電",     "成本": 0,       "股數": 0},   # 補成本
-    "3037.TW": {"名稱": "欣興",     "成本": 0,       "股數": 0},
     "2330.TW": {"名稱": "台積電",   "成本": 2328.31, "股數": 100},
     "3017.TW": {"名稱": "奇鋐",     "成本": 2307.78, "股數": 200},
     "2369.TW": {"名稱": "嘉澤",     "成本": 1355.82, "股數": 74},
     "4958.TW": {"名稱": "臻鼎-KY", "成本": 381.54,  "股數": 1400},
     "6500.TW": {"名稱": "聯茂",     "成本": 263.37,  "股數": 1000},
-    "2344.TW": {"名稱": "華邦電",   "成本": 0,       "股數": 0},
-    "2317.TW": {"名稱": "鴻海",     "成本": 0,       "股數": 0},
     "2454.TW": {"名稱": "聯發科",   "成本": 3474.94, "股數": 100},
     "3515.TW": {"名稱": "國巨",     "成本": 327.97,  "股數": 1000},
     "2337.TW": {"名稱": "南電",     "成本": 581.43,  "股數": 500},
 }
 
-# ── 自選觀察股 ──────────────────────────────────────
 WATCHLIST = {
-    "AI伺服器": {
-        "台股": [("2382.TW","廣達"),("3231.TW","緯創"),("3491.TW","緯穎"),("2356.TW","英業達")],
-        "美股": [("NVDA","NVIDIA"),("SMCI","Super Micro"),("DELL","Dell")]
-    },
-    "散熱": {
-        "台股": [("3017.TW","奇鋐"),("3324.TW","雙鴻"),("3653.TW","健策")],
-        "美股": [("VRT","Vertiv")]
-    },
-    "PCB / CCL": {
-        "台股": [("2383.TW","台光電"),("6274.TW","台燿"),("4958.TW","臻鼎"),("3037.TW","欣興"),("6500.TW","聯茂")],
-        "美股": []
-    },
-    "記憶體": {
-        "台股": [("2408.TW","南亞科"),("2344.TW","華邦電")],
-        "美股": [("MU","Micron")]
-    },
-    "IC設計": {
-        "台股": [("2454.TW","聯發科"),("3034.TW","聯詠"),("3515.TW","國巨")],
-        "美股": [("AVGO","Broadcom"),("MRVL","Marvell")]
-    },
-    "測試介面": {
-        "台股": [("6515.TW","穎崴"),("6223.TW","旺矽"),("6510.TW","精測")],
-        "美股": [("TER","Teradyne")]
-    },
+    "AI伺服器": [("2382.TW","廣達"),("3231.TW","緯創"),("3491.TW","緯穎"),("NVDA","NVIDIA"),("SMCI","Super Micro")],
+    "散熱":     [("3017.TW","奇鋐"),("3324.TW","雙鴻"),("3653.TW","健策"),("VRT","Vertiv")],
+    "PCB/CCL":  [("2383.TW","台光電"),("6274.TW","台燿"),("4958.TW","臻鼎"),("3037.TW","欣興"),("6500.TW","聯茂")],
+    "記憶體":   [("2408.TW","南亞科"),("2344.TW","華邦電"),("MU","Micron")],
+    "IC設計":   [("2454.TW","聯發科"),("3034.TW","聯詠"),("3515.TW","國巨"),("AVGO","Broadcom")],
+    "測試介面": [("6515.TW","穎崴"),("6223.TW","旺矽"),("6510.TW","精測"),("TER","Teradyne")],
 }
 
-# ── 抓股價 ──────────────────────────────────────────
 @st.cache_data(ttl=1800)
-def fetch(symbol, period="3mo"):
+def fetch(symbol):
     try:
-        df = yf.download(symbol, period=period, progress=False, auto_adjust=False)
-        if df.empty:
+        raw = yf.download(symbol, period="3mo", progress=False, auto_adjust=False)
+        if raw is None or raw.empty:
             return None
-        df = df.reset_index()
-        df["MA5"]  = df["Close"].rolling(5).mean()
-        df["MA10"] = df["Close"].rolling(10).mean()
-        df["MA20"] = df["Close"].rolling(20).mean()
-        df["VOL_MA5"] = df["Volume"].rolling(5).mean()
-        return df
-    except:
+        # yfinance sometimes returns MultiIndex columns — flatten them
+        if isinstance(raw.columns, pd.MultiIndex):
+            raw.columns = raw.columns.get_level_values(0)
+        raw = raw.reset_index()
+        raw["MA5"]     = raw["Close"].rolling(5).mean()
+        raw["MA10"]    = raw["Close"].rolling(10).mean()
+        raw["MA20"]    = raw["Close"].rolling(20).mean()
+        raw["VOL_MA5"] = raw["Volume"].rolling(5).mean()
+        return raw
+    except Exception:
         return None
 
-def last_price(df):
-    cols = [c for c in ["MA5","MA10","MA20"] if c in df.columns]
-    row = df.dropna(subset=cols).iloc[-1]
-    close = float(row["Close"].iloc[0] if hasattr(row["Close"], "iloc") else row["Close"])
-    ma5   = float(row["MA5"].iloc[0]   if hasattr(row["MA5"],   "iloc") else row["MA5"])
-    ma10  = float(row["MA10"].iloc[0]  if hasattr(row["MA10"],  "iloc") else row["MA10"])
-    ma20  = float(row["MA20"].iloc[0]  if hasattr(row["MA20"],  "iloc") else row["MA20"])
-    vol   = float(row["Volume"].iloc[0]    if hasattr(row["Volume"],    "iloc") else row["Volume"])
-    vol5  = float(row["VOL_MA5"].iloc[0]   if hasattr(row["VOL_MA5"],   "iloc") else row["VOL_MA5"])
-    return close, ma5, ma10, ma20, vol, vol5
+def to_float(val):
+    try:
+        if hasattr(val, "__len__") and not isinstance(val, str):
+            return float(val.iloc[0])
+        return float(val)
+    except Exception:
+        return 0.0
 
-def signal(close, ma5, ma10, ma20, vol, vol_ma5):
-    a5, a10, a20 = close>ma5, close>ma10, close>ma20
-    vol_up = vol > vol_ma5*1.2 if vol_ma5>0 else False
-    if a5 and a10 and a20 and vol_up: return "🟢 強勢追蹤", "右側突破，量價配合"
-    if a10 and a20:                   return "🟡 波段續抱", "中期偏多，等回檔"
-    if close>ma20 and not a5:         return "🟠 回測觀察", "月線上，短線轉弱"
-    if not a20:                       return "🔴 弱勢暫避", "跌破月線，保守"
-    return "⚪ 震盪不明", "方向不清，不重倉"
+def get_last(df):
+    needed = ["MA5","MA10","MA20","VOL_MA5"]
+    valid = df.dropna(subset=[c for c in needed if c in df.columns])
+    if valid.empty:
+        return None
+    row = valid.iloc[-1]
+    return {
+        "close":   to_float(row["Close"]),
+        "ma5":     to_float(row["MA5"]),
+        "ma10":    to_float(row["MA10"]),
+        "ma20":    to_float(row["MA20"]),
+        "vol":     to_float(row["Volume"]),
+        "vol_ma5": to_float(row["VOL_MA5"]),
+    }
 
-# ═══════════════════════════════════════════════════
-# 頁面主體
-# ═══════════════════════════════════════════════════
+def get_prev_close(df):
+    needed = ["MA5"]
+    valid = df.dropna(subset=[c for c in needed if c in df.columns])
+    if len(valid) < 2:
+        return None
+    return to_float(valid.iloc[-2]["Close"])
+
+def signal(d):
+    c, ma5, ma10, ma20, vol, vol_ma5 = d["close"], d["ma5"], d["ma10"], d["ma20"], d["vol"], d["vol_ma5"]
+    vol_up = vol > vol_ma5 * 1.2 if vol_ma5 > 0 else False
+    if c > ma5 and c > ma10 and c > ma20 and vol_up:
+        return "🟢 強勢追蹤", "右側突破，量價配合"
+    if c > ma10 and c > ma20:
+        return "🟡 波段續抱", "中期偏多，等回檔"
+    if c > ma20:
+        return "🟠 回測觀察", "月線上，短線轉弱"
+    if c < ma20:
+        return "🔴 弱勢暫避", "跌破月線，保守"
+    return "⚪ 震盪不明", "方向不清"
+
+# ── 頁面 ──
 st.title("📊 我的股票戰情室")
-
 tab1, tab2 = st.tabs(["💼 我的持股", "🔍 產業觀察"])
 
-# ── TAB 1：我的持股 ──────────────────────────────────
 with tab1:
     st.subheader("持股損益總覽")
     rows = []
     for sym, info in MY_HOLDINGS.items():
-        if info["股數"] == 0:
-            continue
         df = fetch(sym)
-        if df is None or "MA5" not in df.columns or len(df.dropna(subset=["MA5"])) < 5:
+        if df is None:
             continue
-        close, ma5, ma10, ma20, vol, vol_ma5 = last_price(df)
-        cost = info["成本"]
-        shares = info["股數"]
-        mkt_val = close * shares
-        pnl = (close - cost) * shares
-        pnl_pct = (close - cost) / cost * 100 if cost > 0 else 0
-        sig, reason = signal(close, ma5, ma10, ma20, vol, vol_ma5)
+        last = get_last(df)
+        if last is None:
+            continue
+        cost, shares = info["成本"], info["股數"]
+        pnl = (last["close"] - cost) * shares
+        pnl_pct = (last["close"] - cost) / cost * 100 if cost > 0 else 0
+        sig, reason = signal(last)
         rows.append({
-            "股票": info["名稱"],
-            "代號": sym,
-            "現價": round(close, 2),
-            "成本": round(cost, 2),
-            "損益%": round(pnl_pct, 1),
+            "股票":     info["名稱"],
+            "現價":     round(last["close"], 2),
+            "成本":     round(cost, 2),
+            "損益%":    round(pnl_pct, 1),
             "未實損益": int(pnl),
-            "市值": int(mkt_val),
-            "MA5": round(ma5, 1),
-            "MA20": round(ma20, 1),
-            "燈號": sig,
-            "判斷": reason,
+            "市值":     int(last["close"] * shares),
+            "MA5":      round(last["ma5"], 1),
+            "MA20":     round(last["ma20"], 1),
+            "燈號":     sig,
+            "判斷":     reason,
+            "_sym":     sym,
         })
 
     if rows:
@@ -141,46 +136,44 @@ with tab1:
             use_container_width=True,
             hide_index=True,
             column_config={
-                "損益%": st.column_config.NumberColumn(format="%.1f%%"),
+                "損益%":    st.column_config.NumberColumn(format="%.1f%%"),
                 "未實損益": st.column_config.NumberColumn(format="%+,.0f"),
             }
         )
 
         st.divider()
-        picked = st.selectbox("點選個股看走勢", [f"{r['股票']} ({r['代號']})" for r in rows])
-        sym_pick = picked.split("(")[-1].rstrip(")")
-        df_chart = fetch(sym_pick)
-        if df_chart is not None:
+        names = [r["股票"] for r in rows]
+        picked_name = st.selectbox("點選個股看走勢", names)
+        picked_row = next(r for r in rows if r["股票"] == picked_name)
+        df_chart = fetch(picked_row["_sym"])
+        if df_chart is not None and "MA5" in df_chart.columns:
             chart_data = df_chart.set_index("Date")[["Close","MA5","MA10","MA20"]].dropna()
             st.line_chart(chart_data, use_container_width=True)
     else:
-        st.warning("抓取股價中，請稍候...")
+        st.warning("股價載入中，請稍候重新整理...")
 
-# ── TAB 2：產業觀察 ──────────────────────────────────
 with tab2:
     sector = st.selectbox("產業", list(WATCHLIST.keys()))
-    market = st.radio("市場", ["全部","台股","美股"], horizontal=True)
-
-    sec = WATCHLIST[sector]
-    if market == "台股":   symbols = sec["台股"]
-    elif market == "美股": symbols = sec["美股"]
-    else:                  symbols = sec["台股"] + sec["美股"]
-
     rows2 = []
-    for sym, name in symbols:
+    for sym, name in WATCHLIST[sector]:
         df = fetch(sym)
-        if df is None or "MA5" not in df.columns or len(df.dropna(subset=["MA5"])) < 5:
+        if df is None:
             continue
-        close, ma5, ma10, ma20, vol, vol_ma5 = last_price(df)
-        prev_row = df.dropna(subset=["MA5"]).iloc[-2]["Close"]; prev = float(prev_row.iloc[0] if hasattr(prev_row, 'iloc') else prev_row)
-        chg = (close - prev) / prev * 100
-        sig, reason = signal(close, ma5, ma10, ma20, vol, vol_ma5)
+        last = get_last(df)
+        if last is None:
+            continue
+        prev = get_prev_close(df)
+        chg = (last["close"] - prev) / prev * 100 if prev else 0
+        sig, reason = signal(last)
         rows2.append({
-            "股票": name, "代號": sym,
-            "現價": round(close,2),
-            "漲跌%": round(chg,2),
-            "MA5": round(ma5,1), "MA10": round(ma10,1), "MA20": round(ma20,1),
-            "燈號": sig, "判斷": reason
+            "股票":  name,
+            "現價":  round(last["close"], 2),
+            "漲跌%": round(chg, 2),
+            "MA5":   round(last["ma5"], 1),
+            "MA10":  round(last["ma10"], 1),
+            "MA20":  round(last["ma20"], 1),
+            "燈號":  sig,
+            "判斷":  reason,
         })
 
     if rows2:
